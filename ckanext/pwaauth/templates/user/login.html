@@ -1,0 +1,6 @@
+{% ckan_extends %}
+
+{% set pwa_action = h.get_login_action() %}
+{% block form %}
+  {% snippet "user/snippets/login_form.html", action=pwa_action, error_summary=error_summary %}
+{% endblock %}
