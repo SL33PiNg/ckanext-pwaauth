@@ -4,6 +4,7 @@ import json
 import logging
 from ckan.plugins import toolkit
 import ckan.model as model
+import os
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +72,8 @@ def find_or_create_user(verification_data, password):
         )
         log.info("Created new user: %s", user_dict)
 
+    
+
     # Retrieve the actual User model object
     user = model.User.get(user_dict["id"])
 
@@ -81,12 +84,23 @@ def find_or_create_user(verification_data, password):
         model.Session.add(user)
         model.Session.commit()
         log.info("User %s is set as sysadmin", username)
+        
+        
     else:
         log.info("User %s is not in division %s", username, division)
         user.sysadmin = False
         model.Session.add(user)
         model.Session.commit()
         log.info("User %s is set as a normal user", username)
+
+    # Add the user to the group based on their division
+    if "division" in verification_data:
+        div = verification_data["division"]
+        add_user_to_group(user_dict["id"], div)
+    elif fullname == "Guest38":
+        div = "กอง"
+        add_user_to_group(user_dict["id"], div)
+
 
     return get_user_dict(user)
 
@@ -128,6 +142,72 @@ def get_user_dict(user):
     )
     return user_dict
     
+
+def parse_division_group_mapping(env_var):
+    """
+    Parse the DIVISION_GROUP_MAPPING environment variable into a dictionary.
+
+    :param env_var: The environment variable string in the format "key1:value1,key2:value2"
+    :return: A dictionary mapping group IDs to divisions
+    """
+    mapping = {}
+    if not env_var:
+        return mapping
+
+    try:
+        pairs = env_var.split(",")
+        for pair in pairs:
+            key, value = pair.split(":")
+            mapping[key.strip()] = value.strip().decode("utf-8")
+    except ValueError:
+        log.error("Invalid format for DIVISION_GROUP_MAPPING. Expected 'key1:value1,key2:value2'.")
+    
+    log.info("Parsed DIVISION_GROUP_MAPPING: %s", mapping)
+
+    return mapping
+
+
+def add_user_to_group(user_id, division):
+    """
+    Add a user to a CKAN group based on their division.
+
+    :param user_id: The ID or name of the user
+    :param division: The division value from the JSON response
+    """
+    # Load the division-to-group mapping from the environment variable
+    division_group_mapping = parse_division_group_mapping(os.getenv("DIVISION_GROUP_MAPPING", ""))
+
+    # Find the group ID for the given division
+    group_id = None
+    for group, mapped_division in division_group_mapping.items():
+        if mapped_division == division:
+            group_id = group
+            break
+
+    if not group_id:
+        log.warning("No group mapping found for division: %s", division)
+        return
+
+    try:
+        # Add the user to the group
+
+        log.info("Adding user '%s' to group '%s'", user_id, group_id)
+
+        toolkit.get_action("group_member_create")(
+            context={"ignore_auth": True},
+            data_dict={
+                "id": group_id,  # Group ID or name
+                "username": user_id,  # User ID or name
+                "role": "member",  # Role to assign (e.g., "member", "editor", "admin")
+            },
+        )
+        log.info("Added user '%s' to group '%s' for division '%s'", user_id, group_id, division)
+    except toolkit.ValidationError as e:
+        log.error("Validation error while adding user to group: %s", e.error_dict)
+    except toolkit.NotAuthorized as e:
+        log.error("Not authorized to add user to group: %s", str(e))
+    except Exception as e:
+        log.error("Error while adding user to group: %s", str(e))
 
 class PWAVerificationError(Exception):
     """The exception class that is raised if trying to verify a Persona
