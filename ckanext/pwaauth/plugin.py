@@ -40,7 +40,6 @@ class PwaauthAuthenticator(p.SingletonPlugin):
     def login(self):
         """Handle an attempt to login using the new authentication service."""
         
-            # return login_success(came_from=params.get("came_from", "/"))
 
     def identify(self):
         """Identify which user (if any) is logged-in via Persona.
@@ -60,20 +59,14 @@ class PwaauthAuthenticator(p.SingletonPlugin):
 
         if "ckanext-pwaauth-user" in session:
             del session["ckanext-pwaauth-user"]
-        if "ckanext-pwaauth-email" in session:
-            del session["ckanext-pwaauth-email"]
         session.save()
 
     def logout(self):
         """Handle a logout."""
-
-        # Delete the session item, so that identify() will no longer find it.
         self._delete_session_items()
 
     def abort(self, status_code, detail, headers, comment):
         """Handle an abort."""
-
-        # Delete the session item, so that identify() will no longer find it.
         self._delete_session_items()
 
     def get_helpers(self):
