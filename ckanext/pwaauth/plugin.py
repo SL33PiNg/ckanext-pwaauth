@@ -1,73 +1,29 @@
 import logging
-import ckan.plugins as p
+# import ckan.plugins as p
+from ckan.plugins import SingletonPlugin, implements, interfaces, toolkit
 import ckan.plugins.toolkit as toolkit
-import uuid
-# from flask import session
 from ckan.common import session, request
+from ckanext.pwaauth.routes.login import blueprint
 
 try:
-    # In case we are running Python3
     from urllib.parse import urlparse, parse_qs
 except ImportError:
     from urlparse import urlparse, parse_qs
 
-
 log = logging.getLogger(__name__)
 
-
-class PwaauthAuthenticator(p.SingletonPlugin):
-    p.implements(p.IConfigurer)
-    p.implements(p.IAuthenticator)
-    p.implements(p.IRoutes, inherit=True) 
-    p.implements(p.ITemplateHelpers, inherit=True)
+class PwaauthAuthenticator(SingletonPlugin):
+    implements(interfaces.IConfigurer)
+    implements(interfaces.IBlueprint, inherit=True)
+    implements(interfaces.IAuthenticator)
+    implements(interfaces.ITemplateHelpers, inherit=True)
 
     def update_config(self, config):
-        """Implement IConfiguer.update_config
+        """Implement IConfigurer.update_config
 
         Add our custom template to the list of templates so we can override the login form.
         """
         toolkit.add_template_directory(config, "templates")
-    
-    def before_map(self, map):
-        """Implements Iroutes.before_map
-
-        Add our custom login form handler"""
-        map.connect('/pwa_login_handler',
-                    controller='ckanext.pwaauth.controller:PwaauthController',
-                    action='login_handler')
-        return map
-
-    def login(self):
-        """Handle an attempt to login using the new authentication service."""
-        
-
-    def identify(self):
-        """Identify which user (if any) is logged-in via Persona.
-
-        If a logged-in user is found, set toolkit.c.user to be their user name.
-
-        """
-        # Try to get the item that login() placed in the session.
-        user = session.get("ckanext-pwaauth-user")
-        if user:
-            # We've found a logged-in user. Set c.user to let CKAN know.
-            log.info("PwaauthAuthenticator identify called: %s", user)
-
-            toolkit.c.user = user
-
-    def _delete_session_items(self):
-
-        if "ckanext-pwaauth-user" in session:
-            del session["ckanext-pwaauth-user"]
-        session.save()
-
-    def logout(self):
-        """Handle a logout."""
-        self._delete_session_items()
-
-    def abort(self, status_code, detail, headers, comment):
-        """Handle an abort."""
-        self._delete_session_items()
 
     def get_helpers(self):
         return {
@@ -75,19 +31,39 @@ class PwaauthAuthenticator(p.SingletonPlugin):
             'get_login_action': get_login_action
         }
 
+    def identify(self):
+        """Identify which user (if any) is logged-in via PWA authentication."""
+        user = session.get("ckanext-pwaauth-user")
+        if user:
+            log.info("PwaauthAuthenticator identify called: %s", user)
+            toolkit.c.user = user
+    def login(self):
+        pass
 
+    def get_blueprint(self):
+        return blueprint
+
+    def logout(self):
+        """Handle a logout."""
+        self._delete_session_items()
+        if toolkit.check_ckan_version(min_version='2.10.0'):
+            toolkit.logout_user()
+
+    def abort(self, status_code, detail, headers, comment):
+        """Handle an abort."""
+        self._delete_session_items()
+
+    def _delete_session_items(self):
+        if "ckanext-pwaauth-user" in session:
+            del session["ckanext-pwaauth-user"]
+        session.save()
 
 def is_pwa_user():
-    """
-    Help function for determining if current user is LDAP user
-    @return: boolean
-    """
-
-    return 'ckanext-pwa-user' in session
+    """Helper function to determine if the current user is a PWA user."""
+    return 'ckanext-pwaauth-user' in session
 
 def get_login_action():
-    """Returns the PWA login handler URL. Preserves the `came_from` parameter if available."""
-    # Safely get the login_handler attribute or provide a default
+    """Returns the PWA login handler URL."""
     login_handler = getattr(toolkit.c, 'login_handler', '/pwa_login_handler')
     came_from = parse_qs(urlparse(login_handler).query).get('came_from')
     if came_from:

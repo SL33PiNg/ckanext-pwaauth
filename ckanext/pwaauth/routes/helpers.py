@@ -54,6 +54,8 @@ def find_or_create_user(verification_data, password):
     fullname = str(verification_data["displayname"])
 
     log.info("User data: %s", username)
+    log.info("User email: %s", email)
+    log.info("User fullname: %s", fullname)
     user_dict = get_user(email)
     log.info("User found: %s", user_dict)
 
