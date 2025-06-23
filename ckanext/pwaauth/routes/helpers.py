@@ -169,7 +169,8 @@ def parse_division_group_mapping(env_var):
 
 def add_user_to_group(user_id, division):
     """
-    Add a user to a CKAN group based on their division.
+    Add a user to a CKAN group based on their division. If the user is no longer in the group,
+    remove them from their current group and add them to the appropriate group.
 
     :param user_id: The ID or name of the user
     :param division: The division value from the JSON response
@@ -189,10 +190,27 @@ def add_user_to_group(user_id, division):
         return
 
     try:
-        # Add the user to the group
+        # Get the user's current group memberships
+        current_groups = toolkit.get_action("group_list")(
+            context={"ignore_auth": True},
+            data_dict={"all_fields": True}
+        )
 
+        # Remove the user from groups they no longer belong to
+        for group in current_groups:
+            if group["id"] != group_id:  # If the user is in a different group
+                log.info("Removing user '%s' from group '%s'", user_id, group["id"])
+                toolkit.get_action("group_member_delete")(
+                    context={"ignore_auth": True},
+                    data_dict={
+                        "id": group["id"],  # Group ID or name
+                        "username": user_id,  # User ID or name
+                    },
+                )
+                log.info("Removed user '%s' from group '%s'", user_id, group["id"])
+
+        # Add the user to the correct group
         log.info("Adding user '%s' to group '%s'", user_id, group_id)
-
         toolkit.get_action("group_member_create")(
             context={"ignore_auth": True},
             data_dict={
@@ -203,11 +221,11 @@ def add_user_to_group(user_id, division):
         )
         log.info("Added user '%s' to group '%s' for division '%s'", user_id, group_id, division)
     except toolkit.ValidationError as e:
-        log.error("Validation error while adding user to group: %s", e.error_dict)
+        log.error("Validation error while adding/removing user to/from group: %s", e.error_dict)
     except toolkit.NotAuthorized as e:
-        log.error("Not authorized to add user to group: %s", str(e))
+        log.error("Not authorized to add/remove user to/from group: %s", str(e))
     except Exception as e:
-        log.error("Error while adding user to group: %s", str(e))
+        log.error("Error while adding/removing user to/from group: %s", str(e))
 
 class PWAVerificationError(Exception):
     """The exception class that is raised if trying to verify a Persona
