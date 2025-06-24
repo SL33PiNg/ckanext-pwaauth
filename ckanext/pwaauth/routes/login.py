@@ -2,7 +2,7 @@ from flask import Blueprint
 from ckan.plugins import toolkit
 import logging
 from ckan.common import session
-from ckanext.pwaauth.helpers import verify_login, PWAVerificationError, find_or_create_user
+from ckanext.pwaauth.routes.helpers import verify_login, PWAVerificationError, find_or_create_user
 from ckan.model import User
 
 log = logging.getLogger(__name__)
@@ -11,48 +11,46 @@ blueprint = Blueprint(name='pwa', import_name=__name__)
 
 @blueprint.route('/pwa_login_handler', methods=['POST'])
 def login_handler():
-  log.info("Pwaauth Route login_handler called")
-  params = toolkit.request.values
-  came_from = params.get('came_from', None)
+    log.info("Pwaauth Route login_handler called")
+    params = toolkit.request.values
+    came_from = params.get('came_from', None)
 
-  if "login" in params and "password" in params:  
-    try:
-        login = params["login"]
-        password = params["password"]
+    # Ensure came_from has a default value if None
+    if not came_from or not isinstance(came_from, str):
+        came_from = "/"
 
-        log.info("Pwaauth Route login_handler called with login: %s", login)
-        verification_data = verify_login(login, password)
-        user = find_or_create_user(verification_data, password)
-        
-        log.info("User found: %s", user)
-        
-
-        if not came_from.startswith("/"):
-            came_from = "/"
-
-        return _login_success(user["name"], came_from=came_from)
-    except PWAVerificationError as e:
-        
-        # No PWA user found see if we have a CKAN user match
-        log.info("Pwaauth Route login_handler failed with PWAVerificationError: %s", str(e))
-        
+    if "login" in params and "password" in params:  
         try:
-            log.info("Attempting to find CKAN user with login: %s", login)
-            user_dict = get_user_dict(login)
-            log.info("CKAN user found: %s", user_dict)
-            user = User.by_name(user_dict['name'])
-            log.info("User object retrieved: %s", user)
-        except toolkit.ObjectNotFound:
-            user = None
-        log.info("validating with password: %s", password)
-        log.info("validating result %s", user.validate_password(password))
-        if user and user.validate_password(password):
-            
-            return _login_success(user.name, came_from=came_from)
+            login = params["login"]
+            password = params["password"]
 
-        log.error("Pwaauth Route login_handler failed: %s", str(e))
-        toolkit.h.flash_error(str(e))
-        return toolkit.redirect_to("user.login")
+            log.info("Pwaauth Route login_handler called with login: %s", login)
+            verification_data = verify_login(login, password)
+            user = find_or_create_user(verification_data, password)
+            
+            log.info("User found: %s", user)
+
+            return _login_success(user["name"], came_from=came_from)
+        except PWAVerificationError as e:
+            # Handle PWA verification error
+            log.info("Pwaauth Route login_handler failed with PWAVerificationError: %s", str(e))
+            
+            try:
+                log.info("Attempting to find CKAN user with login: %s", login)
+                user_dict = get_user_dict(login)
+                log.info("CKAN user found: %s", user_dict)
+                user = User.by_name(user_dict['name'])
+                log.info("User object retrieved: %s", user)
+            except toolkit.ObjectNotFound:
+                user = None
+            log.info("validating with password: %s", password)
+            log.info("validating result %s", user.validate_password(password))
+            if user and user.validate_password(password):
+                return _login_success(user.name, came_from=came_from)
+
+            log.error("Pwaauth Route login_handler failed: %s", str(e))
+            toolkit.h.flash_error(str(e))
+            return toolkit.redirect_to("user.login")
 
 
 

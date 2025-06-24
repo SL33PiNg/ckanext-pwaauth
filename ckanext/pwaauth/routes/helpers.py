@@ -4,6 +4,7 @@ import json
 import logging
 from ckan.plugins import toolkit
 import ckan.model as model
+from ckan.model import User
 import os
 
 log = logging.getLogger(__name__)
@@ -108,32 +109,21 @@ def find_or_create_user(verification_data, password):
 def get_user(email):
     """Return the CKAN user with the given email address.
 
-    :rtype: A CKAN user dict
-
+    :rtype: A CKAN user dict or None
     """
     # We do this by accessing the CKAN model directly, because there isn't a
     # way to search for users by email address using the API yet.
-    import ckan.model
+    user = User.by_email(email)
 
-    users = ckan.model.User.by_email(email)
-
-    assert len(users) in (0, 1), (
-        "The Persona plugin doesn't know what to do "
-        "when CKAN has more than one user with the "
-        "same email address."
-    )
-
-    if users:
-        # But we need to actually return a user dict, so we need to convert it
-        user = users[0]
-        user_dict = toolkit.get_action("user_show")(
-            context={"ignore_auth": True},  # Add ignore_auth to bypass authorization
-            data_dict={"id": user.id}
-        )
-        return user_dict
-
-    else:
+    if user is None:
         return None
+
+    # Convert the User object to a user dict
+    user_dict = toolkit.get_action("user_show")(
+        context={"ignore_auth": True},  # Add ignore_auth to bypass authorization
+        data_dict={"id": user.id}
+    )
+    return user_dict
 
 def get_user_dict(user):
     user_dict = toolkit.get_action("user_show")(
@@ -158,7 +148,7 @@ def parse_division_group_mapping(env_var):
         pairs = env_var.split(",")
         for pair in pairs:
             key, value = pair.split(":")
-            mapping[key.strip()] = value.strip().decode("utf-8")
+            mapping[key.strip()] = value.strip()  # Removed .decode("utf-8")
     except ValueError:
         log.error("Invalid format for DIVISION_GROUP_MAPPING. Expected 'key1:value1,key2:value2'.")
     
@@ -190,9 +180,12 @@ def add_user_to_group(user_id, division):
         return
 
     try:
+        # Use a sysadmin context for performing group actions
+        sysadmin_context = {"ignore_auth": True, "user": "ckan_admin"}  # Replace 'ckan_admin' with your sysadmin username
+
         # Get the user's current group memberships
         current_groups = toolkit.get_action("group_list")(
-            context={"ignore_auth": True},
+            context=sysadmin_context,
             data_dict={"all_fields": True}
         )
 
@@ -201,7 +194,7 @@ def add_user_to_group(user_id, division):
             if group["id"] != group_id:  # If the user is in a different group
                 log.info("Removing user '%s' from group '%s'", user_id, group["id"])
                 toolkit.get_action("group_member_delete")(
-                    context={"ignore_auth": True},
+                    context=sysadmin_context,
                     data_dict={
                         "id": group["id"],  # Group ID or name
                         "username": user_id,  # User ID or name
@@ -212,7 +205,7 @@ def add_user_to_group(user_id, division):
         # Add the user to the correct group
         log.info("Adding user '%s' to group '%s'", user_id, group_id)
         toolkit.get_action("group_member_create")(
-            context={"ignore_auth": True},
+            context=sysadmin_context,
             data_dict={
                 "id": group_id,  # Group ID or name
                 "username": user_id,  # User ID or name
