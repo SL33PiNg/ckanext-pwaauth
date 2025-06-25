@@ -33,7 +33,7 @@ def login_handler():
             return _login_success(user["name"], came_from=came_from)
         except PWAVerificationError as e:
             # Handle PWA verification error
-            log.info("Pwaauth Route login_handler failed with PWAVerificationError: %s", str(e))
+            log.info("Pwauth Route login_handler failed with PWAVerificationError: %s", str(e))
             
             try:
                 log.info("Attempting to find CKAN user with login: %s", login)
@@ -43,14 +43,14 @@ def login_handler():
                 log.info("User object retrieved: %s", user)
             except toolkit.ObjectNotFound:
                 user = None
-            log.info("validating with password: %s", password)
-            log.info("validating result %s", user.validate_password(password))
-            if user and user.validate_password(password):
-                return _login_success(user.name, came_from=came_from)
 
-            log.error("Pwaauth Route login_handler failed: %s", str(e))
-            toolkit.h.flash_error(str(e))
-            return toolkit.redirect_to("user.login")
+            if user and user.validate_password(password):
+                log.info("Password validation successful for user: %s", user.name)
+                return _login_success(user.name, came_from=came_from)
+            else:
+                log.error("Password validation failed or user not found")
+                toolkit.h.flash_error("Invalid username or password")
+                return toolkit.redirect_to("user.login")
 
 
 
